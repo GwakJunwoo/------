@@ -1,40 +1,86 @@
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class PositionManager:
-    def __init__(self):
-        # {strategy_name: {"position": int, "entry_price": float, ...}}
+    """
+    각 전략별 포지션, 진입가, 손익, 진입/청산 이력, 손절/익절 관리
+    """
+    def __init__(self, stop_loss: float = 0.02, take_profit: float = 0.03):
+        # {strategy_name: {...}}
         self.positions: Dict[str, Dict[str, Any]] = {}
+        self.stop_loss = stop_loss
+        self.take_profit = take_profit
 
     def update_position(self, strategy_name: str, signal: int, price: float):
         """
-        signal: 1=Buy, -1=Sell, 0=Flat/No action
-        price: 체결 가격
+        진입 신호(1:롱, -1:숏), 가격을 받아 포지션 상태 갱신
         """
         if strategy_name not in self.positions:
-            self.positions[strategy_name] = {"position": 0, "entry_price": None, "history": [], "pnl": 0.0}
+            self.positions[strategy_name] = {
+                "position": 0, "entry_price": None, "history": [], "pnl": 0.0
+            }
 
         pos = self.positions[strategy_name]["position"]
+        entry = self.positions[strategy_name]["entry_price"]
 
-        if signal == 1:  # Buy
+        # 진입 신호
+        if signal == 1:  # 롱 진입
             if pos <= 0:
-                # 만약 기존에 숏 포지션이 있었다면, 청산 손익 계산
-                if pos == -1 and self.positions[strategy_name]["entry_price"] is not None:
-                    pnl = self.positions[strategy_name]["entry_price"] - price
+                # 기존 숏 청산
+                if pos == -1 and entry is not None:
+                    pnl = entry - price
                     self.positions[strategy_name]["pnl"] += pnl
+                    self.positions[strategy_name]["history"].append(("SHORT_EXIT", price, pnl))
                 self.positions[strategy_name]["position"] = 1
                 self.positions[strategy_name]["entry_price"] = price
-                self.positions[strategy_name]["history"].append(("BUY", price))
-        elif signal == -1:  # Sell
+                self.positions[strategy_name]["history"].append(("LONG_ENTRY", price, 0))
+        elif signal == -1:  # 숏 진입
             if pos >= 0:
-                # 만약 기존에 롱 포지션이 있었다면, 청산 손익 계산
-                if pos == 1 and self.positions[strategy_name]["entry_price"] is not None:
-                    pnl = price - self.positions[strategy_name]["entry_price"]
+                # 기존 롱 청산
+                if pos == 1 and entry is not None:
+                    pnl = price - entry
                     self.positions[strategy_name]["pnl"] += pnl
+                    self.positions[strategy_name]["history"].append(("LONG_EXIT", price, pnl))
                 self.positions[strategy_name]["position"] = -1
                 self.positions[strategy_name]["entry_price"] = price
-                self.positions[strategy_name]["history"].append(("SELL", price))
+                self.positions[strategy_name]["history"].append(("SHORT_ENTRY", price, 0))
         # signal == 0 or None: do nothing
+
+    def check_exit(self, strategy_name: str, price: float) -> Optional[str]:
+        """
+        포지션이 있을 때 손절/익절 조건을 체크하고, 조건 충족 시 자동 청산
+        return: 'stop_loss', 'take_profit', None
+        """
+        info = self.positions.get(strategy_name)
+        if not info or info["position"] == 0 or info["entry_price"] is None:
+            return None
+
+        pos = info["position"]
+        entry = info["entry_price"]
+        pnl = (price - entry) if pos == 1 else (entry - price)
+        pnl_pct = pnl / entry if entry != 0 else 0
+
+        # 손절
+        if pnl_pct <= -self.stop_loss:
+            info["pnl"] += pnl
+            if pos == 1:
+                info["history"].append(("LONG_STOPLOSS", price, pnl))
+            else:
+                info["history"].append(("SHORT_STOPLOSS", price, pnl))
+            info["position"] = 0
+            info["entry_price"] = None
+            return "stop_loss"
+        # 익절
+        if pnl_pct >= self.take_profit:
+            info["pnl"] += pnl
+            if pos == 1:
+                info["history"].append(("LONG_TAKEPROFIT", price, pnl))
+            else:
+                info["history"].append(("SHORT_TAKEPROFIT", price, pnl))
+            info["position"] = 0
+            info["entry_price"] = None
+            return "take_profit"
+        return None
 
     def get_position(self, strategy_name: str):
         return self.positions.get(strategy_name, {"position": 0, "entry_price": None})
@@ -45,8 +91,10 @@ class PositionManager:
     def get_history(self, strategy_name: str):
         return self.positions.get(strategy_name, {}).get("history", [])
 
+    def get_realized_pnl(self, strategy_name: str):
+        return self.positions.get(strategy_name, {}).get("pnl", 0.0)
+
     def summary(self):
-        # 전체 포지션 요약 출력
         for name, info in self.positions.items():
             print("=================")
             print(f"Strategy: {name}")
