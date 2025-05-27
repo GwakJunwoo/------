@@ -5,22 +5,19 @@ import numpy as np
 import pandas as pd
 
 class SignalHub:
-    def __init__(self, DataStream: DataProvider):
-        self._strategies = List(BaseStrategy)        
-        self._DataStream = DataStream
+    def __init__(self, data_stream: DataProvider):
+        self._strategies: List[BaseStrategy] = []
+        self._data_stream = data_stream
 
-    def add_strategy(self, Strategy: BaseStrategy):
-        Strategy.set_DataStream(self._DataStream)
-        self._strategies.append(Strategy)
+    def add_strategy(self, strategy: BaseStrategy):
+        self._strategies.append(strategy)
 
-    def remove_strategy(self, Strategy: BaseStrategy):
-        self._strategies.remove(Strategy)
+    def remove_strategy(self, strategy: BaseStrategy):
+        self._strategies.remove(strategy)
 
-    def init_strategies(self):
+    def notify_strategies(self):
         for strategy in self._strategies:
-            strategy.set_dataStream(self._DataStream)
-            # strategy.set_parameters()
-
-    def nofity_strategies(self):
-        # newData = DataStream.get_data() 
-        for strategy in self._strategies: strategy.execute()
+            interval = getattr(strategy, 'interval', '1d')
+            target_asset = getattr(strategy, 'target_asset', 'KTB')
+            frame = self._data_stream.get_data(interval=interval, target_asset=target_asset)
+            strategy.execute(frame)
