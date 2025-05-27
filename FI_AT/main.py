@@ -3,6 +3,7 @@ from Strategy import MomentumStrategy, SmaCrossStrategy
 from Position import PositionManager
 from SignalHub import SignalHub
 from Execution import BacktestExecution
+from Evaluation import Evaluation
 
 # 1. 데이터 스트림 준비 (Mock)
 data_stream = MockDataStream('1d', 'KTB')
@@ -24,3 +25,9 @@ backtest.run()
 
 # 6. 결과 출력
 position_manager.summary()
+
+
+# 7. 평가
+evaluator = Evaluation(position_manager)
+evaluator.summary("MomentumStrategy")
+evaluator.summary("SmaCrossStrategy")
