@@ -4,7 +4,7 @@ import plotly.graph_objs as go
 import pandas as pd
 
 from DataStream import MockDataStream
-from Strategy import MomentumStrategy, SmaCrossStrategy
+from Strategy import *
 from Position import PositionManager
 from SignalHub import SignalHub
 from Execution import BacktestExecution
@@ -108,6 +108,7 @@ def run_backtest(n_clicks, strategy_name, data_value):
                 trade_indices.append(idx[0])
             else:
                 trade_indices.append(None)
+                
     # 누적 손익을 가격 시계열 길이에 맞게 forward fill
     cum_pnl = pd.Series(0, index=range(len(price_series)))
     if not trade_log.empty and trade_indices:
