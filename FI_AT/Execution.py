@@ -29,6 +29,7 @@ class BacktestExecution(Execution):
             self.signal_hub.notify_strategies()
             # time.sleep(self.interval)
 
+#TODO
 class LiveExecution(Execution):
     def __init__(self, signal_hub: SignalHub, position_manager: PositionManager, poll_interval: float = 1.0):
         super().__init__(signal_hub, position_manager)
