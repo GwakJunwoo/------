@@ -7,6 +7,8 @@ import pandas as pd
 
 """
 
+# git test
+
 class BaseStrategy:
     def __init__(self):
         self._DataStream = None
