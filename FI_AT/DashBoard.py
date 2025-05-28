@@ -188,7 +188,14 @@ def run_backtest(n_clicks, strategy_name, data_value):
             title="가격 + 진입/청산 + 누적손익",
             xaxis_title="Date",
             yaxis_title="Price",
-            template="plotly_white"
+            template="plotly_white",
+            legend=dict(
+                orientation="h",           # 수평 정렬
+                yanchor="bottom",
+                y=-0.3,                   # 그래프 하단에 위치
+                xanchor="center",
+                x=0.5
+            )
         )
         # 거래별 손익 bar chart (trade_log 기준)
         bar_fig.add_trace(go.Bar(
@@ -212,8 +219,8 @@ def run_backtest(n_clicks, strategy_name, data_value):
     # 거래내역 표
     if not trade_log.empty:
         trade_log["date"] = pd.to_datetime(trade_log["date"])
-        trade_log["price"] = trade_log["price"].round(2)
-        trade_log["average_price"] = trade_log["average_price"].round(2)
+        trade_log["price"] = trade_log["price"].round(3)
+        trade_log["average_price"] = trade_log["average_price"].round(3)
         trade_log["pos"] = trade_log["pos"].astype(int)
         trade_log["pnl"] = trade_log["pnl"].round(3)
         trade_log["cum_pnl"] = trade_log["cum_pnl"].round(3)

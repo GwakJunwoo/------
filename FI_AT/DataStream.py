@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 class DataProvider:
@@ -19,7 +20,8 @@ class HistoricalDataStream(DataProvider):
 class MockDataStream(DataProvider):
     def __init__(self, interval, target_asset):
         super().__init__()
-        path = f"C:/Users/infomax/Desktop/FI AT/------/FI_AT/data/{target_asset}_{interval}.csv"
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_dir, "data", f"{target_asset}_{interval}.csv")
         try:
             self.data = pd.read_csv(path)
         except FileNotFoundError:
