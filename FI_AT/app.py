@@ -2,7 +2,7 @@ import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 
-from pages import home, page2, page3
+from pages import home, page2, page3, page4, page5, page6
 
 # 기존 DashBoard.py에서 사용하던 import도 추가
 from DataStream import MockDataStream
@@ -39,6 +39,7 @@ app.layout = html.Div([
                     dbc.NavLink("Details", href="/page3", active="exact", className="sidebar-link"),
                     dbc.NavLink("Debt", href="/page4", active="exact", className="sidebar-link"),
                     dbc.NavLink("Analysis", href="/page5", active="exact", className="sidebar-link"),
+                    dbc.NavLink("Database", href="/page6", active="exact", className="sidebar-link"),
                 ],
                 vertical=True,
                 pills=True,
@@ -55,6 +56,12 @@ def display_page(pathname):
         return page2.layout
     elif pathname == "/page3":
         return page3.layout
+    elif pathname == "/page4":
+        return page4.layout
+    elif pathname == "/page5":
+        return page5.layout
+    elif pathname == "/page6":
+        return page6.layout
     else:
         return home.layout
 
