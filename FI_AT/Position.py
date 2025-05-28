@@ -11,41 +11,84 @@ class PositionManager:
         self.stop_loss = stop_loss
         self.take_profit = take_profit
 
-    def update_position(self, strategy_name: str, signal: int, price: float):
+    def update_position(self, date: str, strategy_name: str, signal: int, price: float):
         """
         진입 신호(1:롱, -1:숏), 가격을 받아 포지션 상태 갱신
         """
         if strategy_name not in self.positions:
             self.positions[strategy_name] = {
-                "position": 0, "entry_price": None, "history": [], "pnl": 0.0
+                "date": None, "position": 0, "entry_price": None, "average_price": None,"history": [], "pnl": 0.0
             }
 
         pos = self.positions[strategy_name]["position"]
         entry = self.positions[strategy_name]["entry_price"]
+        average_price = self.positions[strategy_name].get("average_price", None)
 
         # 진입 신호
-        if signal == 1:  # 롱 진입
-            if pos <= 0:
-                # 기존 숏 청산
-                if pos == -1 and entry is not None:
+        if signal > 0:  # 롱 진입
+            if pos < 0:
+                # 기존 숏 청산 로직: 지금은 그냥 숏 포지션 상태에서 매수 시그널이 나오면 청산산
+                if pos < 0 and entry is not None:
                     pnl = entry - price
                     self.positions[strategy_name]["pnl"] += pnl
-                    self.positions[strategy_name]["history"].append(("SHORT_EXIT", price, pnl))
-                self.positions[strategy_name]["position"] = 1
+                    self.positions[strategy_name]["positions"] = 0
+
+                    # 청산 가격도 반영
+                    self.positions[strategy_name]["entry_price"] = price
+                    self.positions[strategy_name]["history"].append((date, "SHORT_EXIT", price, average_price, pos, pnl))
+
+                # 롱 포지션 진입
+                self.positions[strategy_name]["position"] = signal
                 self.positions[strategy_name]["entry_price"] = price
-                self.positions[strategy_name]["history"].append(("LONG_ENTRY", price, 0))
-        elif signal == -1:  # 숏 진입
-            if pos >= 0:
-                # 기존 롱 청산
-                if pos == 1 and entry is not None:
+                self.positions[strategy_name]["average_price"] = price if average_price is None else ((average_price * pos) + price) / (pos + signal)
+                self.positions[strategy_name]["history"].append((date, "LONG_ENTRY", price, average_price, pos, 0))
+            elif pos > 0:  # 이미 롱 포지션인 경우
+                # 롱 포지션 추가 진입
+                self.positions[strategy_name]["position"] += signal
+                self.positions[strategy_name]["entry_price"] = price
+                self.positions[strategy_name]["average_price"] = ((entry * pos) + (price * signal)) / (pos + signal)
+                self.positions[strategy_name]["history"].append((date, "LONG_ENTRY", price, average_price, pos, 0))
+
+            elif pos == 0:  # 포지션이 없는 경우
+                # 롱 포지션 진입
+                self.positions[strategy_name]["position"] = signal
+                self.positions[strategy_name]["entry_price"] = price
+                self.positions[strategy_name]["average_price"] = price
+                self.positions[strategy_name]["history"].append((date, "LONG_ENTRY", price, average_price, pos, 0))
+
+        elif signal < 0:  # 숏 진입
+            if pos > 0:
+                # 기존 롱 청산 로직: 롱 포지션 상태에서 숏 시그널이 나오면 청산
+                if pos > 0 and entry is not None:
                     pnl = price - entry
                     self.positions[strategy_name]["pnl"] += pnl
-                    self.positions[strategy_name]["history"].append(("LONG_EXIT", price, pnl))
-                self.positions[strategy_name]["position"] = -1
+                    self.positions[strategy_name]["positions"] = 0
+
+                    # 청산 가격도 반영
+                    self.positions[strategy_name]["entry_price"] = price
+                    self.positions[strategy_name]["history"].append((date, "LONG_EXIT", price, average_price, pos, pnl))
+
+                # 숏 포지션 진입
+                self.positions[strategy_name]["position"] = signal
                 self.positions[strategy_name]["entry_price"] = price
-                self.positions[strategy_name]["history"].append(("SHORT_ENTRY", price, 0))
+                self.positions[strategy_name]["average_price"] = price if average_price is None else ((average_price * pos) + price) / (pos + signal)
+                self.positions[strategy_name]["history"].append((date, "SHORT_ENTRY", price, average_price, pos, 0))
+            elif pos < 0:  # 이미 숏 포지션인 경우
+                # 숏 포지션 추가 진입
+                self.positions[strategy_name]["position"] += signal
+                self.positions[strategy_name]["entry_price"] = price
+                self.positions[strategy_name]["average_price"] = ((entry * pos) + (price * signal)) / (pos + signal)
+                self.positions[strategy_name]["history"].append((date, "SHORT_ENTRY", price, average_price, pos, 0))
+
+            elif pos == 0:  # 포지션이 없는 경우
+                # 숏 포지션 진입
+                self.positions[strategy_name]["position"] = signal
+                self.positions[strategy_name]["entry_price"] = price
+                self.positions[strategy_name]["average_price"] = price
+                self.positions[strategy_name]["history"].append((date, "SHORT_ENTRY", price, average_price, pos, 0))
         # signal == 0 or None: do nothing
 
+    #TODO: 아직 미구현, 적용 안함
     def check_exit(self, strategy_name: str, price: float) -> Optional[str]:
         """
         포지션이 있을 때 손절/익절 조건을 체크하고, 조건 충족 시 자동 청산

@@ -51,12 +51,15 @@ app.layout = html.Div([
         dcc.Graph(id="daily-pnl-graph", style={"height": "320px"}),
         html.Div(id="metrics-output", style={"margin-top": "20px", "font-size": "16px"}),
         html.H4("거래 내역", style={"margin-top": "30px"}),
+
         dash_table.DataTable(
             id='trade-table',
             columns=[
-                {"name": "날짜", "id": "Date"},
+                {"name": "날짜", "id": "date"},
                 {"name": "진입/청산", "id": "side"},
-                {"name": "가격", "id": "price", "type": "numeric", "format": {"specifier": ".3f"}},
+                {"name": "현재가", "id": "price", "type": "numeric", "format": {"specifier": ".3f"}},
+                {"name": "평단가", "id": "average_price", "type": "numeric", "format": {"specifier": ".3f"}},
+                {"name": "포지션", "id": "pos", "type": "numeric"},
                 {"name": "손익", "id": "pnl", "type": "numeric", "format": {"specifier": ".3f"}},
                 {"name": "누적손익", "id": "cum_pnl", "type": "numeric", "format": {"specifier": ".3f"}},
             ],
@@ -64,50 +67,30 @@ app.layout = html.Div([
             style_cell={"textAlign": "center"},
             style_header={"fontWeight": "bold"},
             page_size=20,
+            style_data_conditional=[
+                {
+                    "if": {
+                        "filter_query": '{side} contains "EXIT" || {side} contains "STOPLOSS" || {side} contains "TAKEPROFIT"'
+                    },
+                    "backgroundColor": "#f16969"  # 밝은 빨간색
+                }
+            ],
         ),
+
     ], style={
         "width": "76%", "display": "inline-block", "verticalAlign": "top",
         "padding": "30px 40px 20px 20px", "background": "#fff", "height": "100vh", "boxSizing": "border-box"
     }),
 ], style={"font-family": "Segoe UI, sans-serif", "background": "#e9ecef", "height": "100vh"})
 
-def make_cum_pnl_series_realized_only(price_series, trade_log, date_series):
+def make_cum_pnl_series_realized_only(trade_log):
     """
-    진입/청산 시점에만 누적손익을 업데이트(실현손익만 반영, trade_log 기준)
+    trade_log의 Date를 인덱스로 누적손익 시계열 생성 (실현손익만 반영)
     """
-    cum_pnl = []
-    realized_pnl = 0
-    trade_ptr = 0
-    trade_log = trade_log.reset_index(drop=True)
-    # tick_idx 생성
-    if "tick_idx" not in trade_log.columns and not trade_log.empty:
-        tick_indices = []
-        used = set()
-        for price in trade_log["price"]:
-            idx = (abs(price_series - price)).idxmin()
-            if idx not in used:
-                tick_indices.append(idx)
-                used.add(idx)
-            else:
-                tick_indices.append(None)
-        trade_log["tick_idx"] = tick_indices
-
-    # 누적손익 시계열: 거래 발생 시점에만 값이 점프, 나머지는 이전 값 유지
-    tick_idx_to_cum_pnl = {}
-    running_pnl = 0
-    for i, row in trade_log.iterrows():
-        idx = row["tick_idx"]
-        if pd.notnull(idx) and 0 <= int(idx) < len(price_series):
-            running_pnl += row["pnl"]
-            tick_idx_to_cum_pnl[int(idx)] = running_pnl
-
-    cum_pnl = []
-    last_pnl = 0
-    for i in range(len(price_series)):
-        if i in tick_idx_to_cum_pnl:
-            last_pnl = tick_idx_to_cum_pnl[i]
-        cum_pnl.append(last_pnl)
-    return pd.Series(cum_pnl, index=date_series)
+    if trade_log.empty:
+        return pd.Series(dtype=float)
+    cum_pnl = trade_log["pnl"].cumsum()
+    return pd.Series(cum_pnl.values, index=pd.to_datetime(trade_log["date"]))
 
 @app.callback(
     [Output("pnl-graph", "figure"),
@@ -134,58 +117,69 @@ def run_backtest(n_clicks, strategy_name, data_value):
     trade_log = evaluator.get_trade_log(strategy_name)
     if not trade_log.empty:
         trade_log["cum_pnl"] = trade_log["pnl"].cumsum()
+        # Date 컬럼이 datetime이 아니면 변환
+        if not pd.api.types.is_datetime64_any_dtype(trade_log["date"]):
+            trade_log["date"] = pd.to_datetime(trade_log["date"])
     else:
         trade_log["cum_pnl"] = []
-
-    # 날짜 시계열 추출
-    if hasattr(data_stream, 'data') and not data_stream.data.empty:
-        price_series = data_stream.data['close'].reset_index(drop=True)
-        if 'Date' in data_stream.data.columns:
-            date_series = pd.to_datetime(data_stream.data['Date']).reset_index(drop=True)
-        else:
-            date_series = data_stream.data.index
-    else:
-        price_series = None
-        date_series = None
 
     fig = go.Figure()
     bar_fig = go.Figure()
 
-    # 누적손익 시계열 생성 (실현손익만 반영)
-    if price_series is not None and not trade_log.empty:
-        cum_pnl_series = make_cum_pnl_series_realized_only(price_series, trade_log, date_series)
-    else:
-        cum_pnl_series = pd.Series([0] * len(price_series), index=date_series) if price_series is not None else pd.Series([])
-
-    # 진입/청산 마커: 날짜 기준으로 맞추기
-    entry_dates, entry_price, exit_dates, exit_price = [], [], [], []
-    if not trade_log.empty and "tick_idx" in trade_log.columns:
-        entry_mask = trade_log["side"].str.contains("ENTRY")
-        exit_mask = trade_log["side"].str.contains("EXIT|STOPLOSS|TAKEPROFIT")
-        entry_idx = trade_log.loc[entry_mask, "tick_idx"].dropna().astype(int).tolist()
-        exit_idx = trade_log.loc[exit_mask, "tick_idx"].dropna().astype(int).tolist()
-        if date_series is not None:
-            entry_dates = [date_series.iloc[i] for i in entry_idx if 0 <= i < len(date_series)]
-            entry_price = [price_series.iloc[i] for i in entry_idx if 0 <= i < len(price_series)]
-            exit_dates = [date_series.iloc[i] for i in exit_idx if 0 <= i < len(date_series)]
-            exit_price = [price_series.iloc[i] for i in exit_idx if 0 <= i < len(price_series)]
-
-    # 가격+진입/청산+누적손익 그래프 (x축: 날짜)
-    if price_series is not None:
-        fig.add_trace(go.Scatter(
-            x=date_series, y=price_series, mode='lines', name='Price', line=dict(color='gray', width=1), opacity=0.5
-        ))
-    if entry_dates and entry_price:
-        fig.add_trace(go.Scatter(
-            x=entry_dates, y=entry_price, mode='markers', name='Entry',
-            marker=dict(symbol='triangle-up', color='green', size=12)
-        ))
-    if exit_dates and exit_price:
-        fig.add_trace(go.Scatter(
-            x=exit_dates, y=exit_price, mode='markers', name='Exit',
-            marker=dict(symbol='triangle-down', color='red', size=12)
-        ))
-    if not cum_pnl_series.empty:
+    # 누적손익 시계열 (trade_log 기준)
+    if not trade_log.empty:
+        cum_pnl_series = make_cum_pnl_series_realized_only(trade_log)
+        # 가격 시계열이 있으면 price_series도 표시
+        price_series = None
+        date_series = None
+        # 가격 시계열 추출 (선택)
+        if hasattr(data_stream, 'data') and not data_stream.data.empty:
+            price_series = data_stream.data['close'].reset_index(drop=True)
+            if 'Date' in data_stream.data.columns:
+                date_series = pd.to_datetime(data_stream.data['Date']).reset_index(drop=True)
+            else:
+                date_series = data_stream.data.index
+        # 가격+진입/청산+누적손익 그래프
+        if price_series is not None and date_series is not None:
+            fig.add_trace(go.Scatter(
+                x=date_series, y=price_series, mode='lines', name='Price', line=dict(color='gray', width=1), opacity=0.5
+            ))
+        # 진입/청산 마커
+    
+            # 진입/청산 마커 (롱/숏/청산 구분)
+            long_entry_mask = trade_log["side"].str.contains("LONG_ENTRY")
+            short_entry_mask = trade_log["side"].str.contains("SHORT_ENTRY")
+            exit_mask = trade_log["side"].str.contains("EXIT|STOPLOSS|TAKEPROFIT")
+    
+            # 롱 진입: 초록 위 삼각형
+            if trade_log.loc[long_entry_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[long_entry_mask, "date"],
+                    y=trade_log.loc[long_entry_mask, "price"],
+                    mode='markers',
+                    name='Long Entry',
+                    marker=dict(symbol='triangle-up', color='green', size=12)
+                ))
+            # 숏 진입: 빨강 아래 삼각형
+            if trade_log.loc[short_entry_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[short_entry_mask, "date"],
+                    y=trade_log.loc[short_entry_mask, "price"],
+                    mode='markers',
+                    name='Short Entry',
+                    marker=dict(symbol='triangle-down', color='red', size=12)
+                ))
+            # 청산: 파란 원
+            if trade_log.loc[exit_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[exit_mask, "date"],
+                    y=trade_log.loc[exit_mask, "price"],
+                    mode='markers',
+                    name='Exit',
+                    marker=dict(symbol='circle', color='blue', size=10)
+                ))
+    
+        # 누적손익
         fig.add_trace(go.Scatter(
             x=cum_pnl_series.index, y=cum_pnl_series, mode='lines', name='Cumulative PnL', yaxis='y2', line=dict(color='blue', width=2)
         ))
@@ -196,29 +190,34 @@ def run_backtest(n_clicks, strategy_name, data_value):
             yaxis_title="Price",
             template="plotly_white"
         )
-
-    # 일별 손익 bar chart (x축: 날짜)
-    if not cum_pnl_series.empty:
-        daily_pnl = cum_pnl_series.diff().fillna(0)
-        bar_fig.add_trace(go.Bar(x=cum_pnl_series.index, y=daily_pnl, name='PnL'))
+        # 거래별 손익 bar chart (trade_log 기준)
+        bar_fig.add_trace(go.Bar(
+            x=trade_log["date"],
+            y=trade_log["pnl"],
+            name='Trade PnL',
+            marker_color='orange'
+        ))
         bar_fig.update_layout(
-            title="PnL (시계열 기준)",
+            title="거래별 손익 (표와 동일)",
             xaxis_title="Date",
             yaxis_title="PnL",
             template="plotly_white"
         )
+    else:
+        cum_pnl_series = pd.Series(dtype=float)
+        # 빈 그래프
+        fig = go.Figure()
+        bar_fig = go.Figure()
 
     # 거래내역 표
     if not trade_log.empty:
-        if "tick_idx" in trade_log.columns and date_series is not None:
-            trade_log["Date"] = [
-                date_series.iloc[i] if pd.notnull(i) and 0 <= int(i) < len(date_series) else None
-                for i in trade_log["tick_idx"]
-            ]
+        trade_log["date"] = pd.to_datetime(trade_log["date"])
         trade_log["price"] = trade_log["price"].round(2)
+        trade_log["average_price"] = trade_log["average_price"].round(2)
+        trade_log["pos"] = trade_log["pos"].astype(int)
         trade_log["pnl"] = trade_log["pnl"].round(3)
         trade_log["cum_pnl"] = trade_log["cum_pnl"].round(3)
-        columns = ["Date", "side", "price", "pnl", "cum_pnl"]
+        columns = ["date", "side", "price", "average_price", "pos", "pnl", "cum_pnl"]
         columns_exist = [col for col in columns if col in trade_log.columns]
         table_data = trade_log[columns_exist].to_dict("records")
     else:

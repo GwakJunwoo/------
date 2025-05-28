@@ -28,7 +28,13 @@ class SignalHub:
             if signal is not None:
                 price = frame['close'].iloc[-1]
                 self._position_manager.update_position(
+                    frame['Date'].iloc[-1],
                     getattr(strategy, '_name', strategy.__class__.__name__),
                     signal,
                     price
                 )
+
+                print(frame['Date'].iloc[-1],
+                    getattr(strategy, '_name', strategy.__class__.__name__),
+                    signal,
+                    price)

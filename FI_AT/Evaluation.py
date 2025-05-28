@@ -11,7 +11,9 @@ class Evaluation:
         history = self.position_manager.get_history(strategy_name)
         if not history:
             return pd.DataFrame()
-        df = pd.DataFrame(history, columns=['side', 'price', 'pnl'])
+        df = pd.DataFrame(history, columns=['date', 'side', 'price', 'average_price', 'pos','pnl'])
+        print(df)
+        df['date'] = pd.to_datetime(df['date'])
         return df
 
     def get_daily_pnl(self, strategy_name):
@@ -19,10 +21,16 @@ class Evaluation:
         history = self.position_manager.get_history(strategy_name)
         if not history:
             return pd.Series(dtype=float)
+        dates = []
         prices = []
+        average_prices = []
+        positions = []
         sides = []
-        for side, price, pnl in history:
+        for date, side, price, average_price, pos, pnl in history:
+            dates.append(pd.to_datetime(date))
             prices.append(price)
+            average_prices.append(average_price)
+            positions.append(pos)
             sides.append(1 if side == "BUY" else -1)
         # 단순히 체결마다 손익 계산
         pnl = []
