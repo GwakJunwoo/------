@@ -1,36 +1,56 @@
+html, body {
+    height: 100%;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
 body {
     background: #fff !important;
-    height: 100vh;
     min-height: 100vh;
+    height: 100%;
 }
-.sidebar {
-    width: 300px;
-    min-width: 140px;
-    background: #f8f9fa !important; /* 색상 통일 */
-    height: 100vh;
+
+.app-root, #root {
     min-height: 100vh;
+    height: 100%;
+}
+
+.sidebar {
+    width: 220px;
+    min-width: 140px;
+    background: #f8f9fa !important;
+    min-height: 100vh;
+    height: 100%;
     display: inline-block;
     vertical-align: top;
-    padding: 30px 10px 20px 10px;
+    padding: 30px 16px 20px 16px;
     box-sizing: border-box;
+    position: relative;
 }
+
 .sidebar-nav .nav-link {
     font-size: 17px;
     color: #333;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     border-radius: 8px;
     background: #f1f3f6;
     transition: background 0.2s, color 0.2s;
-    padding: 10px 12px;
+    padding: 12px 16px;
     font-weight: 500;
+    display: block;
 }
-.sidebar-nav .nav-link.active, .sidebar-nav .nav-link:focus, .sidebar-nav .nav-link:hover {
+
+.sidebar-nav .nav-link.active,
+.sidebar-nav .nav-link:focus,
+.sidebar-nav .nav-link:hover {
     background: #007bff;
     color: #fff !important;
     text-decoration: none;
 }
+
 .content {
-    width: 76vw;
+    width: calc(100vw - 220px);
     display: inline-block;
     vertical-align: top;
     padding: 30px 40px 20px 20px;
@@ -38,6 +58,7 @@ body {
     min-height: 100vh;
     box-sizing: border-box;
 }
+
 .sidebar-link {
     font-size: 18px;
     color: #333;
@@ -45,6 +66,7 @@ body {
     margin-bottom: 10px;
     display: block;
 }
+
 .sidebar-link:hover {
     color: #007bff;
     text-decoration: underline;

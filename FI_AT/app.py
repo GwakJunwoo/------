@@ -43,7 +43,7 @@ app.layout = html.Div([
     ], className="sidebar"),
 
     html.Div(id='page-content', className="content")
-])
+], style={"minHeight": "100vh", "height": "100%"})
 
 @app.callback(Output('page-content', 'children'), [Input('url', 'pathname')])
 def display_page(pathname):

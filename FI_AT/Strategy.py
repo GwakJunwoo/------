@@ -74,3 +74,5 @@ class SmaCrossStrategy(BaseStrategy):
             return -1
         else:
             return None
+        
+    
