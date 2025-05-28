@@ -1,0 +1,51 @@
+body {
+    background: #fff !important;
+    height: 100vh;
+    min-height: 100vh;
+}
+.sidebar {
+    width: 300px;
+    min-width: 140px;
+    background: #f8f9fa !important; /* 색상 통일 */
+    height: 100vh;
+    min-height: 100vh;
+    display: inline-block;
+    vertical-align: top;
+    padding: 30px 10px 20px 10px;
+    box-sizing: border-box;
+}
+.sidebar-nav .nav-link {
+    font-size: 17px;
+    color: #333;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    background: #f1f3f6;
+    transition: background 0.2s, color 0.2s;
+    padding: 10px 12px;
+    font-weight: 500;
+}
+.sidebar-nav .nav-link.active, .sidebar-nav .nav-link:focus, .sidebar-nav .nav-link:hover {
+    background: #007bff;
+    color: #fff !important;
+    text-decoration: none;
+}
+.content {
+    width: 76vw;
+    display: inline-block;
+    vertical-align: top;
+    padding: 30px 40px 20px 20px;
+    background: #fff;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+.sidebar-link {
+    font-size: 18px;
+    color: #333;
+    text-decoration: none;
+    margin-bottom: 10px;
+    display: block;
+}
+.sidebar-link:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
