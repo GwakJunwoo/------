@@ -65,8 +65,6 @@ def display_page(pathname):
     else:
         return home.layout
 
-# ... (생략: 콜백 함수 등) ...
-# --------- 기존 DashBoard.py의 콜백 함수 등록 ---------
 def make_cum_pnl_series_realized_only(trade_log):
     if trade_log.empty:
         return pd.Series(dtype=float)
