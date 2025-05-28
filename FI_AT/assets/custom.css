@@ -6,27 +6,32 @@ html, body {
 }
 
 body {
-    background: #fff !important;
+    background: #e9ecef !important;
     min-height: 100vh;
     height: 100%;
 }
 
-.app-root, #root {
+#root, .app-root {
+    min-height: 100vh;
+    height: 100%;
+}
+
+.layout-root {
+    display: flex;
     min-height: 100vh;
     height: 100%;
 }
 
 .sidebar {
-    width: 220px;
+    width: 300px;
     min-width: 140px;
     background: #f8f9fa !important;
     min-height: 100vh;
     height: 100%;
-    display: inline-block;
-    vertical-align: top;
+    display: flex;
+    flex-direction: column;
     padding: 30px 16px 20px 16px;
     box-sizing: border-box;
-    position: relative;
 }
 
 .sidebar-nav .nav-link {
@@ -50,13 +55,12 @@ body {
 }
 
 .content {
-    width: calc(100vw - 220px);
-    display: inline-block;
-    vertical-align: top;
+    flex: 1 1 0%;
     padding: 30px 40px 20px 20px;
     background: #fff;
     min-height: 100vh;
     box-sizing: border-box;
+    overflow-x: auto;
 }
 
 .sidebar-link {

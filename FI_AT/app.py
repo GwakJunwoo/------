@@ -26,24 +26,28 @@ app = dash.Dash(
     external_stylesheets=[dbc.themes.BOOTSTRAP]
 )
 
+# app.py 예시
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     html.Div([
-        html.H2("KIS FI System", style={"margin-bottom": "40px", "font-weight": "bold"}),
-        dbc.Nav(
-            [
-                dbc.NavLink("AT", href="/", active="exact", className="sidebar-link"),
-                dbc.NavLink("화면2", href="/page2", active="exact", className="sidebar-link"),
-                dbc.NavLink("화면3", href="/page3", active="exact", className="sidebar-link"),
-            ],
-            vertical=True,
-            pills=True,
-            className="sidebar-nav"
-        ),
-    ], className="sidebar"),
-
-    html.Div(id='page-content', className="content")
-], style={"minHeight": "100vh", "height": "100%"})
+        html.Div([
+            html.H2("KIS FI System", style={"margin-bottom": "40px", "font-weight": "bold"}),
+            dbc.Nav(
+                [
+                    dbc.NavLink("Algorithm", href="/", active="exact", className="sidebar-link"),
+                    dbc.NavLink("Position", href="/page2", active="exact", className="sidebar-link"),
+                    dbc.NavLink("Details", href="/page3", active="exact", className="sidebar-link"),
+                    dbc.NavLink("Debt", href="/page4", active="exact", className="sidebar-link"),
+                    dbc.NavLink("Analysis", href="/page5", active="exact", className="sidebar-link"),
+                ],
+                vertical=True,
+                pills=True,
+                className="sidebar-nav"
+            ),
+        ], className="sidebar"),
+        html.Div(id='page-content', className="content")
+    ], className="layout-root")
+])
 
 @app.callback(Output('page-content', 'children'), [Input('url', 'pathname')])
 def display_page(pathname):
