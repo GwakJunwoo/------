@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from DBConnection import *
 
 class DataProvider:
     def __init__(self):
@@ -9,14 +10,28 @@ class DataProvider:
         raise NotImplementedError
 
 class HistoricalDataStream(DataProvider):
-    def __init__(self):
-        self.data = pd.DataFrame()
+    def __init__(self, interval, target_asset, from_dt, to_dt=None, limit=None):
+        super().__init__()
+        # DB에서 데이터 불러오기
+        self.data = load_price(target_asset, from_dt, to_dt, interval, limit)
+        self._current_idx = 0
+        self.interval = interval
+        self.target_asset = target_asset
 
-    def get_data(self, interval, target_asset):
-    # 조건에 맞는 DataFrame slice를 반환
-        return self.data[(self.data['interval'] == interval) & 
-                         (self.data['asset'] == target_asset)]
-    
+    def get_data(self, interval=None, target_asset=None):
+        filtered = self.data
+        if self._current_idx < len(filtered):
+            # 한 row씩 반환
+            result = filtered.iloc[[self._current_idx]]
+            self._current_idx += 1
+            return result
+        else:
+            return pd.DataFrame()  # 끝나면 빈 데이터프레임
+
+    def reset(self):
+        self._current_idx = 0
+
+
 class MockDataStream(DataProvider):
     def __init__(self, interval, target_asset):
         super().__init__()

@@ -1,6 +1,7 @@
 import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
+from datetime import datetime, timedelta
 
 from pages import home, page2, page3, page4, page5, page6
 
@@ -84,7 +85,20 @@ def run_backtest(n_clicks, strategy_name, data_value):
     if n_clicks == 0:
         return go.Figure(), go.Figure(), "", []
     interval, asset = eval(data_value)
-    data_stream = MockDataStream(interval, asset)
+
+    #MockDataStream을 사용하려면 주석 해제
+    #data_stream = MockDataStream(interval, asset)
+
+    # HistoricalDataStream을 사용하려면 주석 해제
+
+    # ==============================================
+    interval = 60
+    asset = "KTB3F"
+    from_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    data_stream = HistoricalDataStream(interval, asset, from_date)
+
+    # ==============================================
+
     position_manager = PositionManager()
     signal_hub = SignalHub(data_stream, position_manager)
     strategy = STRATEGY_MAP[strategy_name]()
