@@ -298,40 +298,44 @@ def unified_callback(n_clicks, return_mode, vendor, asset, interval, strategy_na
 
         metrics = evaluator.summary(strategy_name, print_result=False) if hasattr(evaluator, "summary") else ""
         metrics_table = ""
-        if isinstance(metrics, str) and "====" in metrics:
-            items = re.findall(r'([A-Za-z\s%]+):\s*([-\d\.]+)', metrics)
-            if items:
-                columns_ = [k.strip() for k, v in items]
-                values_ = [v for k, v in items]
-                metrics_table = dash_table.DataTable(
-                    columns=[{"name": col, "id": col} for col in columns_],
-                    data=[{col: val for col, val in zip(columns_, values_)}],
-                    style_cell={"textAlign": "center"},
-                    style_header={"fontWeight": "bold"},
-                    style_table={"marginBottom": "10px"},
-                )
-            else:
-                metrics_table = html.Pre(metrics)
+        if isinstance(metrics, dict):
+            rounded_metrics = {k: round(v, 3) if isinstance(v, float) else v for k, v in metrics.items()}
+            metrics_table = dash_table.DataTable(
+                columns=[{"name": k, "id": k} for k in rounded_metrics.keys()],
+                data=[rounded_metrics],
+                style_cell={"textAlign": "center"},
+                style_header={"fontWeight": "bold"},
+                style_table={"marginBottom": "10px"},
+            )
         else:
-            metrics_table = html.Pre(metrics)
+            metrics_table = html.Pre(str(metrics))
 
         return fig, bar_fig, metrics_table, table_data
-
+    
+    # TODO: return-mode 체크박스 기능 구현
+    """
     # 2. return-mode 체크박스 변경 시
     elif triggered_id == "return-mode":
         if not current_table_data:
             return dash.no_update, dash.no_update, dash.no_update, current_table_data
         new_data = copy.deepcopy(current_table_data)
         if "return" in return_mode:
+            cum_return = 0
             for row in new_data:
                 try:
                     avg = float(row.get("average_price", 0))
+                    price = float(row.get("price", 0))
                     if avg != 0:
-                        row["pnl"] = round(float(row["pnl"]) / avg * 100, 3)
-                        row["cum_pnl"] = round(float(row["cum_pnl"]) / avg * 100, 3)
+                        # 수익률 계산 이거는 ("EXIT|STOPLOSS|TAKEPROFIT") 이 경우에만 적용
+                        if row["side"] in ["EXIT", "STOPLOSS", "TAKEPROFIT"]:
+                            ret = (price / avg - 1) * 100
+                            row["pnl"] = round(ret, 3)
+                            cum_return += ret
+                            row["cum_pnl"] = round(cum_return, 3)
                 except Exception:
                     pass
         # 체크 해제 시 원본 복구 불가(백테스트 다시 실행해야 함)
         return dash.no_update, dash.no_update, dash.no_update, new_data
 
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    """

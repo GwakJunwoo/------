@@ -12,7 +12,6 @@ class Evaluation:
         if not history:
             return pd.DataFrame()
         df = pd.DataFrame(history, columns=['date', 'side', 'price', 'average_price', 'pos','pnl'])
-        print(df)
         df['date'] = pd.to_datetime(df['date'])
         return df
 
@@ -40,24 +39,32 @@ class Evaluation:
         return daily_pnl
 
     def summary(self, strategy_name, print_result=True):
-        daily_pnl = self.get_daily_pnl(strategy_name)
+        trade_log = self.get_trade_log(strategy_name)
+        daily_pnl = trade_log['pnl'] if not trade_log.empty else pd.Series(dtype=float)
         if daily_pnl.empty:
             if print_result:
                 print("No trades.")
-            return "No trades."
+            return {
+                "Total Trades": 0,
+                "Total PnL": 0.0,
+                "Sharpe Ratio": 0.0,
+                "Win Rate": 0.0,
+                "Annualized Volatility": 0.0
+            }
         cum_pnl = daily_pnl.cumsum()
-        sharpe = daily_pnl.mean() / (daily_pnl.std() + 1e-8) * np.sqrt(252)
+        sharpe = daily_pnl.mean() / (daily_pnl.std() + 1e-8) * np.sqrt(365/4)
         win_rate = (daily_pnl > 0).sum() / len(daily_pnl)
-        volatility = daily_pnl.std() * np.sqrt(252)
+        volatility = daily_pnl.std() * np.sqrt(365/4)
     
-        result = (
-            f"==== Evaluation for {strategy_name} ====\n"
-            f"Total Trades: {len(daily_pnl)}\n"
-            f"Total PnL: {cum_pnl.iloc[-1]:.2f}\n"
-            f"Sharpe Ratio: {sharpe:.2f}\n"
-            f"Win Rate: {win_rate*100:.2f}%\n"
-            f"Annualized Volatility: {volatility:.4f}"
-        )
+        result = {
+            "Total Trades": len(daily_pnl),
+            "Total PnL": float(cum_pnl.iloc[-1]),
+            "Sharpe Ratio": float(sharpe),
+            "Win Rate": float(win_rate) * 100,
+            "Annualized Volatility": float(volatility)
+        }
         if print_result:
-            print(result)
+            print("==== Evaluation for", strategy_name, "====")
+            for k, v in result.items():
+                print(f"{k}: {v}")
         return result
