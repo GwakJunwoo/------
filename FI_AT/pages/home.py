@@ -1,9 +1,12 @@
-from dash import dcc, html, dash_table, Input, Output, State, callback
+from dash import dcc, html, dash_table, Input, Output, State, callback, callback_context
+import dash
 import plotly.graph_objs as go
 import pandas as pd
+import re
+import copy
 
 from DataStream import MockDataStream, HistoricalDataStream
-from Strategy import MomentumStrategy, SmaCrossStrategy
+from Strategy import *
 from Position import PositionManager
 from SignalHub import SignalHub
 from Execution import BacktestExecution
@@ -11,7 +14,12 @@ from Evaluation import Evaluation
 
 STRATEGY_OPTIONS = [
     {"label": "MomentumStrategy", "value": "MomentumStrategy"},
-    {"label": "SmaCrossStrategy", "value": "SmaCrossStrategy"}
+    {"label": "RateOfChangeStrategy", "value": "RateOfChangeStrategy"},
+    {"label": "SmaCrossStrategy", "value": "SmaCrossStrategy"},
+    {"label": "MeanReversionStrategy", "value": "MeanReversionStrategy"},
+    {"label": "RsiStrategy", "value": "RsiStrategy"},
+    {"label": "BollingerBandStrategy", "value": "BollingerBandStrategy"},
+    {"label": "MomentumMeanReversionSwitchStrategy", "value": "MomentumMeanReversionSwitchStrategy"},
 ]
 
 ASSET_OPTIONS = [
@@ -34,7 +42,12 @@ VENDOR_OPTIONS = [
 
 STRATEGY_MAP = {
     "MomentumStrategy": MomentumStrategy,
-    "SmaCrossStrategy": SmaCrossStrategy
+    "RateOfChangeStrategy": RateOfChangeStrategy,
+    "SmaCrossStrategy": SmaCrossStrategy,
+    "MeanReversionStrategy": MeanReversionStrategy,
+    "RsiStrategy": RsiStrategy,
+    "BollingerBandStrategy": BollingerBandStrategy,
+    "MomentumMeanReversionSwitchStrategy": MomentumMeanReversionSwitchStrategy
 }
 
 layout = html.Div([
@@ -79,34 +92,48 @@ layout = html.Div([
     }),
 
     html.H3("백테스트 결과", style={"margin-top": "10px"}),
-    dcc.Graph(id="pnl-graph", style={"height": "400px"}),
-    dcc.Graph(id="daily-pnl-graph", style={"height": "320px"}),
-    html.Div(id="metrics-output", style={"margin-top": "20px", "font-size": "16px"}),
-    html.H4("거래 내역", style={"margin-top": "30px"}),
-    dash_table.DataTable(
-        id='trade-table',
-        columns=[
-            {"name": "날짜", "id": "date"},
-            {"name": "진입/청산", "id": "side"},
-            {"name": "현재가", "id": "price", "type": "numeric", "format": {"specifier": ".3f"}},
-            {"name": "평단가", "id": "average_price", "type": "numeric", "format": {"specifier": ".3f"}},
-            {"name": "포지션", "id": "pos", "type": "numeric"},
-            {"name": "손익", "id": "pnl", "type": "numeric", "format": {"specifier": ".3f"}},
-            {"name": "누적손익", "id": "cum_pnl", "type": "numeric", "format": {"specifier": ".3f"}},
-        ],
-        data=[],
-        style_table={"overflowX": "auto"},
-        style_cell={"textAlign": "center"},
-        style_header={"fontWeight": "bold"},
-        page_size=20,
-        style_data_conditional=[
-            {
-                "if": {
-                    "filter_query": '{side} contains "EXIT" || {side} contains "STOPLOSS" || {side} contains "TAKEPROFIT"'
-                },
-                "backgroundColor": "#f16969"
-            }
-        ],
+    dcc.Loading(
+        id="loading-backtest",
+        type="circle",
+        children=[
+            dcc.Graph(id="pnl-graph", style={"height": "400px"}),
+            dcc.Graph(id="daily-pnl-graph", style={"height": "320px"}),
+            html.Div(id="metrics-output", style={"margin-top": "20px", "font-size": "16px"}),
+            html.Div([
+                html.H4("거래 내역", style={"margin-top": "30px", "display": "inline-block"}),
+                dcc.Checklist(
+                    id="return-mode",
+                    options=[{"label": "수익률(%)로 보기", "value": "return"}],
+                    value=[],
+                    style={"float": "right", "margin-right": "10px"}
+                ),
+            ], style={"width": "100%", "display": "flex", "align-items": "center", "justify-content": "space-between"}),
+            dash_table.DataTable(
+                id='trade-table',
+                columns=[
+                    {"name": "날짜", "id": "date"},
+                    {"name": "진입/청산", "id": "side"},
+                    {"name": "현재가", "id": "price", "type": "numeric", "format": {"specifier": ".3f"}},
+                    {"name": "평단가", "id": "average_price", "type": "numeric", "format": {"specifier": ".3f"}},
+                    {"name": "포지션", "id": "pos", "type": "numeric"},
+                    {"name": "손익", "id": "pnl", "type": "numeric", "format": {"specifier": ".3f"}},
+                    {"name": "누적손익", "id": "cum_pnl", "type": "numeric", "format": {"specifier": ".3f"}},
+                ],
+                data=[],
+                style_table={"overflowX": "auto"},
+                style_cell={"textAlign": "center"},
+                style_header={"fontWeight": "bold"},
+                page_size=20,
+                style_data_conditional=[
+                    {
+                        "if": {
+                            "filter_query": '{side} contains "EXIT" || {side} contains "STOPLOSS" || {side} contains "TAKEPROFIT"'
+                        },
+                        "backgroundColor": "#f16969"
+                    }
+                ],
+            ),
+        ]
     ),
 ], className="content")
 
@@ -116,167 +143,195 @@ layout = html.Div([
     Output("metrics-output", "children"),
     Output("trade-table", "data"),
     Input("run-backtest", "n_clicks"),
+    Input("return-mode", "value"),
     State("vendor-dropdown", "value"),
     State("asset-dropdown", "value"),
     State("interval-dropdown", "value"),
     State("strategy-dropdown", "value"),
+    State("trade-table", "data"),
     prevent_initial_call=True
 )
-def run_backtest(n_clicks, vendor, asset, interval, strategy_name):
-    import datetime
-    if n_clicks == 0:
-        return go.Figure(), go.Figure(), "", []
+def unified_callback(n_clicks, return_mode, vendor, asset, interval, strategy_name, current_table_data):
+    ctx = callback_context
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
 
-    # 데이터 스트림 선택
-    if vendor == "Mock":
-        data_stream = MockDataStream(interval, asset)
-    else:
-        from_date = (datetime.datetime.now() - datetime.timedelta(days=365/4)).strftime("%Y-%m-%d")
-        data_stream = HistoricalDataStream(interval, asset, from_date)
+    # 1. 백테스트 버튼 클릭 시
+    if triggered_id == "run-backtest":
+        import datetime
+        if n_clicks == 0:
+            return go.Figure(), go.Figure(), "", []
 
-    position_manager = PositionManager()
-    signal_hub = SignalHub(data_stream, position_manager)
-    strategy = STRATEGY_MAP[strategy_name]()
-    signal_hub.add_strategy(strategy)
-    backtest = BacktestExecution(signal_hub, position_manager)
-    backtest.run()
-    evaluator = Evaluation(position_manager)
-
-    trade_log = evaluator.get_trade_log(strategy_name)
-    if not trade_log.empty:
-        trade_log["cum_pnl"] = trade_log["pnl"].cumsum()
-        # x축용 날짜는 항상 datetime으로 변환
-        if not pd.api.types.is_datetime64_any_dtype(trade_log["date"]):
-            trade_log["date"] = pd.to_datetime(trade_log["date"])
-    else:
-        trade_log["cum_pnl"] = []
-
-    # 가격+진입/청산+누적손익 그래프
-    fig = go.Figure()
-    # 거래별 손익 바그래프
-    bar_fig = go.Figure()
-
-    if not trade_log.empty:
-        # 가격 시계열
-        price_series = None
-        date_series = None
-        if hasattr(data_stream, 'data') and not data_stream.data.empty:
-            price_series = data_stream.data['close'].reset_index(drop=True)
-            if 'Date' in data_stream.data.columns:
-                date_series = pd.to_datetime(data_stream.data['Date']).reset_index(drop=True)
-            elif 'trade_date' in data_stream.data.columns:
-                date_series = pd.to_datetime(data_stream.data['trade_date']).reset_index(drop=True)
-            else:
-                date_series = data_stream.data.index
-
-        # 가격선
-        if price_series is not None and date_series is not None:
-            fig.add_trace(go.Scatter(
-                x=date_series, y=price_series, mode='lines', name='Price', line=dict(color='gray', width=1), opacity=0.5
-            ))
-
-        # 진입/청산 마커
-        long_entry_mask = trade_log["side"].str.contains("LONG_ENTRY")
-        short_entry_mask = trade_log["side"].str.contains("SHORT_ENTRY")
-        exit_mask = trade_log["side"].str.contains("EXIT|STOPLOSS|TAKEPROFIT")
-
-        if trade_log.loc[long_entry_mask, "date"].size > 0:
-            fig.add_trace(go.Scatter(
-                x=trade_log.loc[long_entry_mask, "date"],
-                y=trade_log.loc[long_entry_mask, "price"],
-                mode='markers',
-                name='Long Entry',
-                marker=dict(symbol='triangle-up', color='green', size=12)
-            ))
-        if trade_log.loc[short_entry_mask, "date"].size > 0:
-            fig.add_trace(go.Scatter(
-                x=trade_log.loc[short_entry_mask, "date"],
-                y=trade_log.loc[short_entry_mask, "price"],
-                mode='markers',
-                name='Short Entry',
-                marker=dict(symbol='triangle-down', color='red', size=12)
-            ))
-        if trade_log.loc[exit_mask, "date"].size > 0:
-            fig.add_trace(go.Scatter(
-                x=trade_log.loc[exit_mask, "date"],
-                y=trade_log.loc[exit_mask, "price"],
-                mode='markers',
-                name='Exit',
-                marker=dict(symbol='circle', color='blue', size=10)
-            ))
-
-        # 누적손익선
-        fig.add_trace(go.Scatter(
-            x=trade_log["date"], y=trade_log["cum_pnl"], mode='lines', name='Cumulative PnL', yaxis='y2', line=dict(color='blue', width=2)
-        ))
-
-        # 레이아웃
-        fig.update_layout(
-            yaxis2=dict(overlaying='y', side='right', title='Cumulative PnL'),
-            title="가격 + 진입/청산 + 누적손익",
-            xaxis_title="Date",
-            yaxis_title="Price",
-            template="plotly_white",
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.3,
-                xanchor="center",
-                x=0.5
-            )
-        )
-
-        # 거래별 손익 바그래프
-        bar_fig = go.Figure()
-        bar_fig.add_trace(go.Bar(
-            x=trade_log["date"],
-            y=trade_log["pnl"],
-            name='Trade PnL',
-            marker_color='skyblue'
-        ))
-        # y축 자동조정: 데이터 범위에 맞게, 0이 포함되도록 + 마진
-        y_pnl = trade_log["pnl"]
-        if len(y_pnl) > 0:
-            y_min = y_pnl.min()
-            y_max = y_pnl.max()
-            # 마진 비율 (10%)
-            margin = (y_max - y_min) * 0.1 if y_max != y_min else 1
-            y_min_margin = y_min - margin
-            y_max_margin = y_max + margin
-            # 0이 범위 안에 있으면 0도 포함
-            if y_min < 0 < y_max:
-                y_min_margin = min(0, y_min_margin)
-                y_max_margin = max(0, y_max_margin)
-            # 값이 모두 0이거나 한 값만 있을 때
-            if y_min == y_max:
-                y_min_margin -= 1
-                y_max_margin += 1
+        # 데이터 스트림 선택
+        if vendor == "Mock":
+            data_stream = MockDataStream(interval, asset)
         else:
-            y_min_margin, y_max_margin = -1, 1
+            from_date = (datetime.datetime.now() - datetime.timedelta(days=365/4)).strftime("%Y-%m-%d")
+            data_stream = HistoricalDataStream(interval, asset, from_date)
 
-        bar_fig.update_layout(
-            title="거래별 손익 (표와 동일)",
-            xaxis_title="Date",
-            yaxis_title="PnL",
-            template="plotly_white",
-            bargap=0.2,
-            xaxis=dict(
-                rangeslider=dict(visible=True),
-                type="date"
-            ),
-            yaxis=dict(
-                autorange=False,
-                range=[y_min_margin, y_max_margin],
-                zeroline=True
+        position_manager = PositionManager()
+        signal_hub = SignalHub(data_stream, position_manager)
+        strategy = STRATEGY_MAP[strategy_name]()
+        signal_hub.add_strategy(strategy)
+        backtest = BacktestExecution(signal_hub, position_manager)
+        backtest.run()
+        evaluator = Evaluation(position_manager)
+
+        trade_log = evaluator.get_trade_log(strategy_name)
+        if not trade_log.empty:
+            trade_log["cum_pnl"] = trade_log["pnl"].cumsum()
+            if not pd.api.types.is_datetime64_any_dtype(trade_log["date"]):
+                trade_log["date"] = pd.to_datetime(trade_log["date"])
+        else:
+            trade_log["cum_pnl"] = []
+
+        fig = go.Figure()
+        bar_fig = go.Figure()
+
+        if not trade_log.empty:
+            price_series = None
+            date_series = None
+            if hasattr(data_stream, 'data') and not data_stream.data.empty:
+                price_series = data_stream.data['close'].reset_index(drop=True)
+                if 'Date' in data_stream.data.columns:
+                    date_series = pd.to_datetime(data_stream.data['Date']).reset_index(drop=True)
+                elif 'trade_date' in data_stream.data.columns:
+                    date_series = pd.to_datetime(data_stream.data['trade_date']).reset_index(drop=True)
+                else:
+                    date_series = data_stream.data.index
+
+            if price_series is not None and date_series is not None:
+                fig.add_trace(go.Scatter(
+                    x=date_series, y=price_series, mode='lines', name='Price', line=dict(color='gray', width=1), opacity=0.5
+                ))
+
+            long_entry_mask = trade_log["side"].str.contains("LONG_ENTRY")
+            short_entry_mask = trade_log["side"].str.contains("SHORT_ENTRY")
+            exit_mask = trade_log["side"].str.contains("EXIT|STOPLOSS|TAKEPROFIT")
+
+            if trade_log.loc[long_entry_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[long_entry_mask, "date"],
+                    y=trade_log.loc[long_entry_mask, "price"],
+                    mode='markers',
+                    name='Long Entry',
+                    marker=dict(symbol='triangle-up', color='green', size=12)
+                ))
+            if trade_log.loc[short_entry_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[short_entry_mask, "date"],
+                    y=trade_log.loc[short_entry_mask, "price"],
+                    mode='markers',
+                    name='Short Entry',
+                    marker=dict(symbol='triangle-down', color='red', size=12)
+                ))
+            if trade_log.loc[exit_mask, "date"].size > 0:
+                fig.add_trace(go.Scatter(
+                    x=trade_log.loc[exit_mask, "date"],
+                    y=trade_log.loc[exit_mask, "price"],
+                    mode='markers',
+                    name='Exit',
+                    marker=dict(symbol='circle', color='blue', size=10)
+                ))
+
+            fig.add_trace(go.Scatter(
+                x=trade_log["date"], y=trade_log["cum_pnl"], mode='lines', name='Cumulative PnL', yaxis='y2', line=dict(color='blue', width=2)
+            ))
+
+            fig.update_layout(
+                yaxis2=dict(overlaying='y', side='right', title='Cumulative PnL'),
+                title="가격 + 진입/청산 + 누적손익",
+                xaxis_title="Date",
+                yaxis_title="Price",
+                template="plotly_white",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.3,
+                    xanchor="center",
+                    x=0.5
+                )
             )
-        )
 
-    # DataTable data
-    columns = ["date", "side", "price", "average_price", "pos", "pnl", "cum_pnl"]
-    columns_exist = [col for col in columns if col in trade_log.columns]
-    table_data = trade_log[columns_exist].to_dict("records") if not trade_log.empty else []
+            bar_fig.add_trace(go.Bar(
+                x=trade_log["date"],
+                y=trade_log["pnl"],
+                name='Trade PnL',
+                marker_color='skyblue'
+            ))
+            y_pnl = trade_log["pnl"]
+            if len(y_pnl) > 0:
+                y_min = y_pnl.min()
+                y_max = y_pnl.max()
+                margin = (y_max - y_min) * 0.1 if y_max != y_min else 1
+                y_min_margin = y_min - margin
+                y_max_margin = y_max + margin
+                if y_min < 0 < y_max:
+                    y_min_margin = min(0, y_min_margin)
+                    y_max_margin = max(0, y_max_margin)
+                if y_min == y_max:
+                    y_min_margin -= 1
+                    y_max_margin += 1
+            else:
+                y_min_margin, y_max_margin = -1, 1
 
-    # Metrics
-    metrics = evaluator.summary(strategy_name, print_result=False) if hasattr(evaluator, "summary") else ""
+            bar_fig.update_layout(
+                title="거래별 손익 (표와 동일)",
+                xaxis_title="Date",
+                yaxis_title="PnL",
+                template="plotly_white",
+                bargap=0.2,
+                xaxis=dict(
+                    rangeslider=dict(visible=True),
+                    type="date"
+                ),
+                yaxis=dict(
+                    autorange=False,
+                    range=[y_min_margin, y_max_margin],
+                    zeroline=True
+                )
+            )
 
-    return fig, bar_fig, metrics, table_data
+        columns = ["date", "side", "price", "average_price", "pos", "pnl", "cum_pnl"]
+        columns_exist = [col for col in columns if col in trade_log.columns]
+        table_df = trade_log[columns_exist].copy() if not trade_log.empty else pd.DataFrame(columns=columns_exist)
+        table_data = table_df.to_dict("records") if not table_df.empty else []
+
+        metrics = evaluator.summary(strategy_name, print_result=False) if hasattr(evaluator, "summary") else ""
+        metrics_table = ""
+        if isinstance(metrics, str) and "====" in metrics:
+            items = re.findall(r'([A-Za-z\s%]+):\s*([-\d\.]+)', metrics)
+            if items:
+                columns_ = [k.strip() for k, v in items]
+                values_ = [v for k, v in items]
+                metrics_table = dash_table.DataTable(
+                    columns=[{"name": col, "id": col} for col in columns_],
+                    data=[{col: val for col, val in zip(columns_, values_)}],
+                    style_cell={"textAlign": "center"},
+                    style_header={"fontWeight": "bold"},
+                    style_table={"marginBottom": "10px"},
+                )
+            else:
+                metrics_table = html.Pre(metrics)
+        else:
+            metrics_table = html.Pre(metrics)
+
+        return fig, bar_fig, metrics_table, table_data
+
+    # 2. return-mode 체크박스 변경 시
+    elif triggered_id == "return-mode":
+        if not current_table_data:
+            return dash.no_update, dash.no_update, dash.no_update, current_table_data
+        new_data = copy.deepcopy(current_table_data)
+        if "return" in return_mode:
+            for row in new_data:
+                try:
+                    avg = float(row.get("average_price", 0))
+                    if avg != 0:
+                        row["pnl"] = round(float(row["pnl"]) / avg * 100, 3)
+                        row["cum_pnl"] = round(float(row["cum_pnl"]) / avg * 100, 3)
+                except Exception:
+                    pass
+        # 체크 해제 시 원본 복구 불가(백테스트 다시 실행해야 함)
+        return dash.no_update, dash.no_update, dash.no_update, new_data
+
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update
