@@ -54,13 +54,14 @@ def load_price(symbol: str, from_dt: str, to_dt: str = None, interval: int=60, l
     }).dropna()
 
     df = df.reset_index()
-
+    print(df)
     # 컬럼명 강제 재정의 (예방용)
-    df = df[['Date', 'open', 'high', 'low', 'close', 'volume']]
+    df = df[['trade_date', 'open', 'high', 'low', 'close', 'volume']]
+    df.columns = ['Date', 'open', 'high', 'low', 'close', 'volume']
 
     if limit:
         df = df.tail(limit)
-
+    
     return df
 
 #df = load_price('KTB3F', '2025-05-01', interval=60)

@@ -40,10 +40,10 @@ class MomentumStrategy(BaseStrategy):
             return None  # 데이터 부족
         momentum = self.history['close'].iloc[-1] - self.history['close'].iloc[-lookback-1]
         if momentum > 0:
-            print(f"[{self._name}] Buy Signal Detected (momentum={momentum:.3f})")
+            #print(f"[{self._name}] Buy Signal Detected (momentum={momentum:.3f})")
             return 1
         elif momentum < 0:
-            print(f"[{self._name}] Sell Signal Detected (momentum={momentum:.3f})")
+            #print(f"[{self._name}] Sell Signal Detected (momentum={momentum:.3f})")
             return -1
         else:
             return None
@@ -67,10 +67,10 @@ class SmaCrossStrategy(BaseStrategy):
         long_ma = self.history['close'].rolling(window=long_window).mean()
         # 골든/데드크로스 판별
         if short_ma.iloc[-2] < long_ma.iloc[-2] and short_ma.iloc[-1] >= long_ma.iloc[-1]:
-            print(f"[{self._name}] Buy Signal Detected at {self.history['close'].iloc[-1]}")
+            #print(f"[{self._name}] Buy Signal Detected at {self.history['close'].iloc[-1]}")
             return 1
         elif short_ma.iloc[-2] > long_ma.iloc[-2] and short_ma.iloc[-1] <= long_ma.iloc[-1]:
-            print(f"[{self._name}] Sell Signal Detected at {self.history['close'].iloc[-1]}")
+            #print(f"[{self._name}] Sell Signal Detected at {self.history['close'].iloc[-1]}")
             return -1
         else:
             return None
