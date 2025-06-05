@@ -18,11 +18,11 @@ app.layout = html.Div([
             dbc.Nav(
                 [
                     dbc.NavLink("Algorithm", href="/", active="exact", className="sidebar-link"),
-                    dbc.NavLink("Position", href="/page2", active="exact", className="sidebar-link"),
-                    dbc.NavLink("Details", href="/page3", active="exact", className="sidebar-link"),
-                    dbc.NavLink("Debt", href="/page4", active="exact", className="sidebar-link"),
-                    dbc.NavLink("Analysis", href="/page5", active="exact", className="sidebar-link"),
-                    dbc.NavLink("Database", href="/page6", active="exact", className="sidebar-link"),
+                    #dbc.NavLink("Position", href="/page2", active="exact", className="sidebar-link"),
+                    #dbc.NavLink("Details", href="/page3", active="exact", className="sidebar-link"),
+                    #dbc.NavLink("Debt", href="/page4", active="exact", className="sidebar-link"),
+                    #dbc.NavLink("Analysis", href="/page5", active="exact", className="sidebar-link"),
+                    #dbc.NavLink("Database", href="/page6", active="exact", className="sidebar-link"),
                 ],
                 vertical=True,
                 pills=True,

@@ -7,7 +7,7 @@ import copy
 
 from DataStream import MockDataStream, HistoricalDataStream
 from Strategy import *
-from Position import PositionManager
+from Position import PositionManager, PositionManagerCapital
 from SignalHub import SignalHub
 from Execution import BacktestExecution
 from Evaluation import Evaluation
@@ -20,6 +20,11 @@ STRATEGY_OPTIONS = [
     {"label": "RsiStrategy", "value": "RsiStrategy"},
     {"label": "BollingerBandStrategy", "value": "BollingerBandStrategy"},
     {"label": "MomentumMeanReversionSwitchStrategy", "value": "MomentumMeanReversionSwitchStrategy"},
+    {"label": "DonchianCloseBreakoutStrategy", "value": "DonchianCloseBreakoutStrategy"},
+    {"label": "ZScoreMeanReversionStrategy", "value": "ZScoreMeanReversionStrategy"},
+    {"label": "AdaptiveZScoreMeanRev", "value": "AdaptiveZScoreMeanRev"},
+    {"label": "ZScoreLayeredMeanRev", "value": "ZScoreLayeredMeanRev"},
+    {"label": "VotingEnsembleStrategy", "value": "VotingEnsembleStrategy"},
 ]
 
 ASSET_OPTIONS = [
@@ -32,12 +37,12 @@ ASSET_OPTIONS = [
 ]
 
 INTERVAL_OPTIONS = [
-    {"label": str(i), "value": i} for i in [1, 5, 15, 30, 60, 240, 1440]
+    {"label": str(i), "value": i} for i in [1, 5, 15, 30, 60, 120, 240, 1440]
 ]
 
 VENDOR_OPTIONS = [
+    {"label": "Historical", "value": "Historical"},
     {"label": "Mock", "value": "Mock"},
-    {"label": "Historical", "value": "Historical"}
 ]
 
 STRATEGY_MAP = {
@@ -47,7 +52,12 @@ STRATEGY_MAP = {
     "MeanReversionStrategy": MeanReversionStrategy,
     "RsiStrategy": RsiStrategy,
     "BollingerBandStrategy": BollingerBandStrategy,
-    "MomentumMeanReversionSwitchStrategy": MomentumMeanReversionSwitchStrategy
+    "MomentumMeanReversionSwitchStrategy": MomentumMeanReversionSwitchStrategy,
+    "DonchianCloseBreakoutStrategy": DonchianCloseBreakoutStrategy,
+    "ZScoreMeanReversionStrategy": ZScoreMeanReversionStrategy,
+    "AdaptiveZScoreMeanRev": AdaptiveZScoreMeanRev,
+    "ZScoreLayeredMeanRev": ZScoreLayeredMeanRev,
+    "VotingEnsembleStrategy": VotingEnsembleStrategy,
 }
 
 layout = html.Div([
@@ -118,6 +128,7 @@ layout = html.Div([
                     {"name": "포지션", "id": "pos", "type": "numeric"},
                     {"name": "손익", "id": "pnl", "type": "numeric", "format": {"specifier": ".3f"}},
                     {"name": "누적손익", "id": "cum_pnl", "type": "numeric", "format": {"specifier": ".3f"}},
+                    {"name": "잔고", "id": "cash", "type": "numeric", "format": {"specifier": ".3f"}}
                 ],
                 data=[],
                 style_table={"overflowX": "auto"},
@@ -165,10 +176,10 @@ def unified_callback(n_clicks, return_mode, vendor, asset, interval, strategy_na
         if vendor == "Mock":
             data_stream = MockDataStream(interval, asset)
         else:
-            from_date = (datetime.datetime.now() - datetime.timedelta(days=365/4)).strftime("%Y-%m-%d")
+            from_date = (datetime.datetime.now() - datetime.timedelta(days=365/12)).strftime("%Y-%m-%d")
             data_stream = HistoricalDataStream(interval, asset, from_date)
 
-        position_manager = PositionManager()
+        position_manager = PositionManagerCapital()
         signal_hub = SignalHub(data_stream, position_manager)
         strategy = STRATEGY_MAP[strategy_name]()
         signal_hub.add_strategy(strategy)
@@ -291,13 +302,36 @@ def unified_callback(n_clicks, return_mode, vendor, asset, interval, strategy_na
                 )
             )
 
-        columns = ["date", "side", "price", "average_price", "pos", "pnl", "cum_pnl"]
+        columns = ["date", "side", "price", "average_price", "pos", "pnl", "cum_pnl", "cash"]
         columns_exist = [col for col in columns if col in trade_log.columns]
         table_df = trade_log[columns_exist].copy() if not trade_log.empty else pd.DataFrame(columns=columns_exist)
         table_data = table_df.to_dict("records") if not table_df.empty else []
 
         metrics = evaluator.summary(strategy_name, print_result=False) if hasattr(evaluator, "summary") else ""
         metrics_table = ""
+        # === 전체 수익률 계산 ===
+        # === 마지막 단계에서 남아있는 포지션은 시가평가 ===
+        try:
+            initial_capital = getattr(position_manager, "initial_capital", None)
+            # 마지막 거래 가격 구하기
+            last_price = None
+            if not trade_log.empty:
+                last_price = trade_log["price"].iloc[-1]
+            # 평가자산(현금+미실현손익)
+            if last_price is not None:
+                final_equity = position_manager.get_equity(last_price, strategy_name)
+            else:
+                final_equity = position_manager.get_cash()
+
+            print(f"초기자본: {initial_capital}, 최종평가: {final_equity}")
+            if initial_capital and final_equity is not None:
+                total_return = (final_equity / initial_capital - 1) * 100
+                total_return_str = f"전체 수익률: {total_return:.2f}% (초기자본: {initial_capital:,.0f} → 최종평가: {final_equity:,.0f})"
+            else:
+                total_return_str = ""
+        except Exception as e:
+            total_return_str = ""
+
         if isinstance(metrics, dict):
             rounded_metrics = {k: round(v, 3) if isinstance(v, float) else v for k, v in metrics.items()}
             metrics_table = dash_table.DataTable(
@@ -310,7 +344,13 @@ def unified_callback(n_clicks, return_mode, vendor, asset, interval, strategy_na
         else:
             metrics_table = html.Pre(str(metrics))
 
-        return fig, bar_fig, metrics_table, table_data
+        # === 전체 수익률을 metrics_table 위에 출력 ===
+        metrics_output = html.Div([
+            html.Div(total_return_str, style={"fontWeight": "bold", "fontSize": "18px", "marginBottom": "10px", "color": "#1a7f37"}),
+            metrics_table
+        ])
+
+        return fig, bar_fig, metrics_output, table_data
     
     # TODO: return-mode 체크박스 기능 구현
     """

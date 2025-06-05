@@ -11,7 +11,7 @@ class Evaluation:
         history = self.position_manager.get_history(strategy_name)
         if not history:
             return pd.DataFrame()
-        df = pd.DataFrame(history, columns=['date', 'side', 'price', 'average_price', 'pos','pnl'])
+        df = pd.DataFrame(history, columns=['date', 'side', 'price', 'average_price', 'pos', 'pnl', 'cash'])
         df['date'] = pd.to_datetime(df['date'])
         return df
 
@@ -51,10 +51,13 @@ class Evaluation:
                 "Win Rate": 0.0,
                 "Annualized Volatility": 0.0
             }
+        
+        cash = self.position_manager.get_cash()
+        pct_change = (cash - self.position_manager.get_initial_cash()) / self.position_manager.get_initial_cash() * np.sqrt(365/12)
         cum_pnl = daily_pnl.cumsum()
-        sharpe = daily_pnl.mean() / (daily_pnl.std() + 1e-8) * np.sqrt(365/4)
+        sharpe = pct_change / (daily_pnl.std() + 1e-8) * np.sqrt(365/12)
         win_rate = (daily_pnl > 0).sum() / len(daily_pnl)
-        volatility = daily_pnl.std() * np.sqrt(365/4)
+        volatility = daily_pnl.std() * np.sqrt(365/12)
     
         result = {
             "Total Trades": len(daily_pnl),
